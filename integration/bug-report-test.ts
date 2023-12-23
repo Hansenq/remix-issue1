@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, Page, ConsoleMessage } from "@playwright/test";
 
 import { PlaywrightFixture } from "./helpers/playwright-fixture.js";
 import type { Fixture, AppFixture } from "./helpers/create-fixture.js";
@@ -59,27 +59,65 @@ test.beforeAll(async () => {
     ////////////////////////////////////////////////////////////////////////////
     files: {
       "app/routes/_index.tsx": js`
+        import { useEffect, useState } from "react";
         import { json } from "@remix-run/node";
-        import { useLoaderData, Link } from "@remix-run/react";
+        import { useLoaderData, Link, useFetcher } from "@remix-run/react";
 
         export function loader() {
           return json("pizza");
         }
 
         export default function Index() {
-          let data = useLoaderData();
+          let fetcher = useFetcher();
+
+          useEffect(() => {
+            // These will error
+            fetcher.load("/static/test.json");
+            // fetcher.submit({}, { method: "get", action: "/static/test.json" });
+          }, [])
+
           return (
             <div>
-              {data}
-              <Link to="/burgers">Other Route</Link>
+              {fetcher.data && <span id="useFetcherID">useFetcher works!</span>}
+              <span>Hello World!</span>
             </div>
           )
         }
       `,
 
-      "app/routes/burgers.tsx": js`
+      "app/routes/fetch.tsx": js`
+        import { useEffect, useState } from "react";
+        import { json } from "@remix-run/node";
+        import { useLoaderData, Link, useFetcher } from "@remix-run/react";
+
+        export function loader() {
+          return json("pizza");
+        }
+
         export default function Index() {
-          return <div>cheeseburger</div>;
+          let [fetchValue, setFetchValue] = useState("");
+
+          useEffect(() => {
+            // This will work
+            fetch("/static/test.json").then((data) => {
+              return data.text();
+            }).then((data) => {
+              setFetchValue(data);
+            })
+          }, [])
+
+          return (
+            <div>
+              {fetchValue && <span id="fetchID">fetch() works!</span>}
+              <span>Hello World!</span>
+            </div>
+          )
+        }
+      `,
+
+      "public/static/test.json": js`
+        {
+          "foo": "bar"
         }
       `,
     },
@@ -98,22 +136,53 @@ test.afterAll(() => {
 // add a good description for what you expect Remix to do 👇🏽
 ////////////////////////////////////////////////////////////////////////////////
 
-test("[description of what you expect it to do]", async ({ page }) => {
+test("expects fetch() to properly load a URL not defined as a route", async ({
+  page,
+}) => {
   let app = new PlaywrightFixture(appFixture, page);
-  // You can test any request your app might get using `fixture`.
-  let response = await fixture.requestDocument("/");
-  expect(await response.text()).toMatch("pizza");
+  await app.goto("/fetch");
 
-  // If you need to test interactivity use the `app`
+  let consoleMessages: any[] = [];
+  page.on("console", async (message) => {
+    let args = message.args();
+    let consoleJson = await args[0].jsonValue();
+    consoleMessages.push(await args[0].jsonValue());
+
+    // This test will not show any console errors
+    if (consoleJson.status >= 400) {
+      console.error("fetch() logs:", consoleJson);
+    }
+  });
+
+  // #fetchID appears on the page when `fetch` successfully loads data
+  expect(await page.locator("#fetchID").textContent()).toContain(
+    "fetch() works!"
+  );
+});
+
+test("expects useFetcher to properly load a URL not defined as a route", async ({
+  page,
+}) => {
+  let app = new PlaywrightFixture(appFixture, page);
   await app.goto("/");
-  await app.clickLink("/burgers");
-  await page.waitForSelector("text=cheeseburger");
 
-  // If you're not sure what's going on, you can "poke" the app, it'll
-  // automatically open up in your browser for 20 seconds, so be quick!
-  // await app.poke(20);
+  let consoleMessages: any[] = [];
+  page.on("console", async (message) => {
+    let args = message.args();
+    let consoleJson = await args[0].jsonValue();
+    consoleMessages.push(await args[0].jsonValue());
 
-  // Go check out the other tests to see what else you can do.
+    // Console will show Error: No route matches URL "/static/test.json"
+    if (consoleJson.status >= 400) {
+      console.error("useFetcher logs:", consoleJson);
+    }
+  });
+
+  // #useFetcherID appears on the page when useFetcher successfully loads data
+  // This will timeout because useFetcher will throw an error.
+  expect(await page.locator("#useFetcherID").textContent()).toContain(
+    "useFetcher works!"
+  );
 });
 
 ////////////////////////////////////////////////////////////////////////////////
