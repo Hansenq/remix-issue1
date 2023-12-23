@@ -136,6 +136,7 @@ test.afterAll(() => {
 // add a good description for what you expect Remix to do 👇🏽
 ////////////////////////////////////////////////////////////////////////////////
 
+// This test will succeed
 test("expects fetch() to properly load a URL not defined as a route", async ({
   page,
 }) => {
@@ -160,6 +161,7 @@ test("expects fetch() to properly load a URL not defined as a route", async ({
   );
 });
 
+// This test will fail
 test("expects useFetcher to properly load a URL not defined as a route", async ({
   page,
 }) => {
